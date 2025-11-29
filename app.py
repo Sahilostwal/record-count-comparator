@@ -6,11 +6,11 @@ from io import BytesIO
 # -------------------- PAGE STYLE --------------------
 st.set_page_config(page_title="Table Count Comparator", layout="wide")
 
-# Add gradient background
+# Add gradient background + card UI
 page_bg = """
 <style>
 body {
-    background: linear-gradient(135deg, #e8f0fe 0%, #ffffff 100%);
+    background: linear-gradient(135deg, #eef2f7 0%, #ffffff 100%);
     font-family: 'Segoe UI', sans-serif;
 }
 .block-container {
@@ -43,20 +43,22 @@ h1, h2, h3, h4 {
 st.markdown(page_bg, unsafe_allow_html=True)
 
 # -------------------- TITLE --------------------
-st.title("📊 Table Count Comparator (Before vs After)")
-st.write("Upload two table report files to compare table row counts after deployment.")
+st.title("Table Count Comparator (Before vs After)")
+st.write("Upload two table report text files to compare row counts after deployment.")
 
 # -------------------- YOUR ORIGINAL LOGIC --------------------
 def parse_report_text(text):
-    pattern = re.compile(r'\bTABLE\s*\|\s*([^\|]+?)\s*\|.*?\|\s*([\d,]+)\b', re.IGNORECASE)
+    # Pattern 1: TABLE | name | ... | number
+    pattern = re.compile(r'\\bTABLE\\s*\\|\\s*([^\\|]+?)\\s*\\|.*?\\|\\s*([\\d,]+)\\b', re.IGNORECASE)
     rows = []
     for m in pattern.finditer(text):
         table = m.group(1).strip()
         cnt = int(m.group(2).replace(',', ''))
         rows.append((table, cnt))
 
+    # Fallback pattern: name | 123
     if not rows:
-        fallback = re.compile(r'([A-Za-z0-9_.\- ]+?)\s*\|\s*([\d,]+)')
+        fallback = re.compile(r'([A-Za-z0-9_.\\- ]+?)\\s*\\|\\s*([\\d,]+)')
         for m in fallback.finditer(text):
             table = m.group(1).strip()
             cnt = int(m.group(2).replace(',', ''))
@@ -90,10 +92,10 @@ def compare(df1, df2):
     return merged[["TableName", "Source", "Target", "Difference", "Status"]]
 
 # -------------------- FILE UPLOAD SECTION --------------------
-st.subheader("📁 Upload Files")
+st.subheader("Upload Files")
 
-file1 = st.file_uploader("Upload BEFORE file", type=["txt"])
-file2 = st.file_uploader("Upload AFTER file", type=["txt"])
+file1 = st.file_uploader("Upload BEFORE file (txt)", type=["txt"])
+file2 = st.file_uploader("Upload AFTER file (txt)", type=["txt"])
 
 if file1 and file2:
     st.success("Files uploaded successfully!")
@@ -107,13 +109,12 @@ if file1 and file2:
     result = compare(df1, df2)
 
     # -------------------- RESULT DISPLAY --------------------
-    st.subheader("📌 Comparison Result")
+    st.subheader("Comparison Result")
 
-    # Add status badge
     if all(result["Status"] == "MATCH"):
-        st.markdown('<div class="status-match">✔ ALL TABLES MATCH</div>', unsafe_allow_html=True)
+        st.markdown('<div class="status-match">ALL TABLES MATCH</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="status-notmatch">❌ MISMATCH FOUND</div>', unsafe_allow_html=True)
+        st.markdown('<div class="status-notmatch">MISMATCH FOUND</div>', unsafe_allow_html=True)
 
     st.write("")
     st.dataframe(result, use_container_width=True)
@@ -126,7 +127,14 @@ if file1 and file2:
         result.to_excel(writer, sheet_name="All_Data", index=False)
         notmatch.to_excel(writer, sheet_name="Differences", index=False)
 
-    excel_data = output.getvalue()
+    excel_bytes = output.getvalue()
 
     st.download_button(
-        label="📥 Download Comparison Excel
+        label="Download Comparison Excel",
+        data=excel_bytes,
+        file_name="Record_Comparison.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+else:
+    st.info("Please upload both BEFORE and AFTER files to begin comparison.")
