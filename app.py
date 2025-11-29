@@ -3,13 +3,51 @@ import re
 import pandas as pd
 from io import BytesIO
 
+# -------------------- PAGE STYLE --------------------
 st.set_page_config(page_title="Table Count Comparator", layout="wide")
-st.title("Table Count Comparator (Before vs After)")
 
-# ---------------------- Parsing Logic (YOUR CODE) ----------------------
+# Add gradient background
+page_bg = """
+<style>
+body {
+    background: linear-gradient(135deg, #e8f0fe 0%, #ffffff 100%);
+    font-family: 'Segoe UI', sans-serif;
+}
+.block-container {
+    background: white;
+    padding: 2.2rem 2.5rem;
+    border-radius: 18px;
+    box-shadow: 0 0 25px rgba(0,0,0,0.08);
+}
+h1, h2, h3, h4 {
+    color: #2a4d9b;
+}
+.status-match {
+    padding: 6px 12px;
+    background-color: #d4f8e8;
+    color: #037d50;
+    font-weight: bold;
+    border-radius: 10px;
+    display: inline-block;
+}
+.status-notmatch {
+    padding: 6px 12px;
+    background-color: #ffe1e1;
+    color: #d11a2a;
+    font-weight: bold;
+    border-radius: 10px;
+    display: inline-block;
+}
+</style>
+"""
+st.markdown(page_bg, unsafe_allow_html=True)
 
+# -------------------- TITLE --------------------
+st.title("📊 Table Count Comparator (Before vs After)")
+st.write("Upload two table report files to compare table row counts after deployment.")
+
+# -------------------- YOUR ORIGINAL LOGIC --------------------
 def parse_report_text(text):
-    # Pattern 1: TABLE | name | ... | number
     pattern = re.compile(r'\bTABLE\s*\|\s*([^\|]+?)\s*\|.*?\|\s*([\d,]+)\b', re.IGNORECASE)
     rows = []
     for m in pattern.finditer(text):
@@ -17,7 +55,6 @@ def parse_report_text(text):
         cnt = int(m.group(2).replace(',', ''))
         rows.append((table, cnt))
 
-    # Fallback pattern: name | 123
     if not rows:
         fallback = re.compile(r'([A-Za-z0-9_.\- ]+?)\s*\|\s*([\d,]+)')
         for m in fallback.finditer(text):
@@ -52,7 +89,8 @@ def compare(df1, df2):
 
     return merged[["TableName", "Source", "Target", "Difference", "Status"]]
 
-# ----------------------------------------------------------------------
+# -------------------- FILE UPLOAD SECTION --------------------
+st.subheader("📁 Upload Files")
 
 file1 = st.file_uploader("Upload BEFORE file", type=["txt"])
 file2 = st.file_uploader("Upload AFTER file", type=["txt"])
@@ -60,27 +98,29 @@ file2 = st.file_uploader("Upload AFTER file", type=["txt"])
 if file1 and file2:
     st.success("Files uploaded successfully!")
 
-    # Read content safely
     text1 = file1.read().decode("utf-8", errors="ignore")
     text2 = file2.read().decode("utf-8", errors="ignore")
 
     df1 = parse_report_text(text1)
     df2 = parse_report_text(text2)
 
-    if df1.empty:
-        st.warning("⚠ No table rows parsed from BEFORE file. Check format.")
-    if df2.empty:
-        st.warning("⚠ No table rows parsed from AFTER file. Check format.")
-
     result = compare(df1, df2)
 
-    st.subheader("Comparison Result")
+    # -------------------- RESULT DISPLAY --------------------
+    st.subheader("📌 Comparison Result")
+
+    # Add status badge
+    if all(result["Status"] == "MATCH"):
+        st.markdown('<div class="status-match">✔ ALL TABLES MATCH</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="status-notmatch">❌ MISMATCH FOUND</div>', unsafe_allow_html=True)
+
+    st.write("")
     st.dataframe(result, use_container_width=True)
 
-    # Filter NOT MATCH rows
+    # -------------------- EXCEL EXPORT --------------------
     notmatch = result[result["Status"] == "NOT MATCH"]
 
-    # Prepare Excel in memory
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         result.to_excel(writer, sheet_name="All_Data", index=False)
@@ -89,11 +129,4 @@ if file1 and file2:
     excel_data = output.getvalue()
 
     st.download_button(
-        label="📥 Download Comparison Excel",
-        data=excel_data,
-        file_name="Record_Comparison.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-else:
-    st.info("Please upload BEFORE and AFTER files to begin comparison.")
+        label="📥 Download Comparison Excel
