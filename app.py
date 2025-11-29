@@ -14,12 +14,13 @@ body {
     font-family: 'Segoe UI', sans-serif;
 }
 .block-container {
-    background: rgba(255, 200, 220, 0.35);
+    background: rgba(0, 0, 0, 0.25);
     padding: 2.2rem 2.5rem;
-    border-radius: 20px;
-    backdrop-filter: blur(12px);
-    box-shadow: 0 0 30px rgba(255, 150, 180, 0.20);
+    border-radius: 16px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 0 30px rgba(0,0,0,0.5);
 }
+
 
 }
 h1, h2, h3, h4 {
@@ -137,4 +138,5 @@ if file1 and file2:
 
 else:
     st.info("Please upload both BEFORE and AFTER files to begin comparison.")
+
 
