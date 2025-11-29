@@ -14,7 +14,7 @@ body {
     font-family: 'Segoe UI', sans-serif;
 }
 .block-container {
-    background: white;
+    background: yellow;
     padding: 2.2rem 2.5rem;
     border-radius: 18px;
     box-shadow: 0 0 25px rgba(0,0,0,0.08);
@@ -138,3 +138,4 @@ if file1 and file2:
 
 else:
     st.info("Please upload both BEFORE and AFTER files to begin comparison.")
+
