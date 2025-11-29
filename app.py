@@ -6,16 +6,7 @@ from io import BytesIO
 # -------------------- PAGE STYLE --------------------
 st.set_page_config(page_title="Table Count Comparator", layout="wide")
 
-# --- Top right link (MUST be outside CSS) ---
-st.markdown("""
-<div style='text-align: right; font-size: 17px; margin-top: 10px;'>
-    <a href="https://github.com/sahilostwal" target="_blank" style="color: white; text-decoration: none; font-weight: bold;">
-        sahilostwal
-    </a>
-</div>
-""", unsafe_allow_html=True)
-
-# --- Gradient + Card UI CSS ---
+# -------------------- BACKGROUND + CSS --------------------
 page_bg = """
 <style>
 body {
@@ -23,27 +14,24 @@ body {
     font-family: 'Segoe UI', sans-serif;
 }
 
-/* Main card container */
 .block-container {
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.15);
     padding: 2.2rem 2.5rem;
     border-radius: 16px;
-    backdrop-filter: blur(12px);
-    box-shadow: 0 0 25px rgba(0,0,0,0.12);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 0 25px rgba(0,0,0,0.15);
 }
 
-/* Headings */
 h1, h2, h3, h4 {
-    color: #3b338c !important;
+    color: #3b338c;
 }
 
-/* Status boxes */
 .status-match {
     padding: 6px 12px;
     background-color: #d4f8e8;
     color: #037d50;
     font-weight: bold;
-    border-radius: 8px;
+    border-radius: 10px;
     display: inline-block;
 }
 
@@ -52,7 +40,7 @@ h1, h2, h3, h4 {
     background-color: #ffe1e1;
     color: #d11a2a;
     font-weight: bold;
-    border-radius: 8px;
+    border-radius: 10px;
     display: inline-block;
 }
 </style>
@@ -67,20 +55,20 @@ st.write("Upload two table report text files to compare row counts after deploym
 def parse_report_text(text):
     pattern = re.compile(r'\bTABLE\s*\|\s*([^\|]+?)\s*\|.*?\|\s*([\d,]+)\b', re.IGNORECASE)
     rows = []
-
     for m in pattern.finditer(text):
         table = m.group(1).strip()
-        cnt = int(m.group(2).replace(",", ""))
+        cnt = int(m.group(2).replace(',', ''))
         rows.append((table, cnt))
 
     if not rows:
         fallback = re.compile(r'([A-Za-z0-9_.\- ]+?)\s*\|\s*([\d,]+)')
         for m in fallback.finditer(text):
             table = m.group(1).strip()
-            cnt = int(m.group(2).replace(",", ""))
+            cnt = int(m.group(2).replace(',', ''))
             rows.append((table, cnt))
 
-    return pd.DataFrame(rows, columns=["TableName", "Count"])
+    df = pd.DataFrame(rows, columns=['TableName', 'Count'])
+    return df
 
 
 def normalize(df):
@@ -98,11 +86,10 @@ def compare(df1, df2):
     merged["Source"] = merged["Source"].fillna(0).astype(int)
     merged["Target"] = merged["Target"].fillna(0).astype(int)
     merged["Difference"] = merged["Source"] - merged["Target"]
-
     merged["Status"] = merged.apply(
-        lambda row: "MATCH" if row["Source"] == row["Target"] else "NOT MATCH", axis=1
+        lambda row: "MATCH" if row["Source"] == row["Target"] else "NOT MATCH",
+        axis=1
     )
-
     return merged[["TableName", "Source", "Target", "Difference", "Status"]]
 
 # -------------------- FILE UPLOAD --------------------
@@ -122,6 +109,7 @@ if file1 and file2:
 
     result = compare(df1, df2)
 
+    # -------------------- RESULT --------------------
     st.subheader("Comparison Result")
 
     if all(result["Status"] == "MATCH"):
@@ -132,20 +120,36 @@ if file1 and file2:
     st.write("")
     st.dataframe(result, use_container_width=True)
 
-    # Export
+    # -------------------- EXPORT TO EXCEL --------------------
+    output = BytesIO()
     notmatch = result[result["Status"] == "NOT MATCH"]
 
-    output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         result.to_excel(writer, sheet_name="All_Data", index=False)
         notmatch.to_excel(writer, sheet_name="Differences", index=False)
 
+    excel_bytes = output.getvalue()
+
     st.download_button(
         label="Download Comparison Excel",
-        data=output.getvalue(),
+        data=excel_bytes,
         file_name="Record_Comparison.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 else:
     st.info("Please upload both BEFORE and AFTER files to begin comparison.")
+
+# -------------------- FOOTER --------------------
+st.markdown(
+    """
+    <hr style="margin-top:40px; margin-bottom:10px;">
+    <div style='text-align:center; font-size:16px; padding:10px;'>
+        Developed by 
+        <a href="https://github.com/sahilostwal" target="_blank" style="color:#3b338c; font-weight:bold; text-decoration:none;">
+            sahilostwal
+        </a>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
