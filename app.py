@@ -15,11 +15,11 @@ body {
 }
 
 .block-container {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.18);
     padding: 2.2rem 2.5rem;
     border-radius: 16px;
     backdrop-filter: blur(10px);
-    box-shadow: 0 0 25px rgba(0,0,0,0.15);
+    box-shadow: 0 0 25px rgba(0,0,0,0.12);
 }
 
 h1, h2, h3, h4 {
@@ -68,68 +68,76 @@ st.markdown(page_bg, unsafe_allow_html=True)
 
 # -------------------- TITLE --------------------
 st.title("Table Count Comparator (Before vs After)")
-st.write("Upload two table report text files to compare row counts after deployment, including new and deleted tables.")
+st.write("Upload two table report text files to compare row counts after deployment, including NEW and DELETED tables.")
 
-# -------------------- LOGIC --------------------
+# -------------------- PARSER (FIXED) --------------------
 def parse_report_text(text):
-    pattern = re.compile(r'\bTABLE\s*\|\s*([^\|]+?)\s*\|.*?\|\s*([\d,]+)\b', re.IGNORECASE)
+    # Powerful regex: catches ALL patterns like:
+    # TABLE | pbodb100 | Row Count | 123
+    # TABLE | pbodb100 | 123
+    pattern = re.compile(
+        r'TABLE\s*\|\s*([A-Za-z0-9_]+)\s*\|.*?(\d+)',
+        re.IGNORECASE
+    )
+
     rows = []
     for m in pattern.finditer(text):
         table = m.group(1).strip()
-        cnt = int(m.group(2).replace(',', ''))
-        rows.append((table, cnt))
+        count = int(m.group(2))
+        rows.append((table, count))
 
+    # fallback: no counts found
     if not rows:
-        fallback = re.compile(r'([A-Za-z0-9_.\\- ]+?)\\s*\\|\\s*([\\d,]+)')
+        fallback = re.compile(r'TABLE\s*\|\s*([A-Za-z0-9_]+)', re.IGNORECASE)
         for m in fallback.finditer(text):
-            table = m.group(1).strip()
-            cnt = int(m.group(2).replace(',', ''))
-            rows.append((table, cnt))
+            rows.append((m.group(1).strip(), 0))
 
-    return pd.DataFrame(rows, columns=['TableName', 'Count'])
+    return pd.DataFrame(rows, columns=["TableName", "Count"])
 
 
-def normalize(df):
-    df = df.copy()
-    df["key"] = df["TableName"].str.strip().str.lower()
-    return df
-
-
+# -------------------- COMPARISON LOGIC (FIXED) --------------------
 def compare(df1, df2):
-    d1 = normalize(df1).rename(columns={"Count": "Source"})
-    d2 = normalize(df2).rename(columns={"Count": "Target"})
+    d1 = df1.copy()
+    d2 = df2.copy()
 
-    merged = pd.merge(d1, d2, on="key", how="outer", suffixes=("_s", "_t"))
-    merged["TableName"] = merged["TableName_s"].combine_first(merged["TableName_t"])
-    merged["Source"] = merged["Source"].fillna(0).astype(int)
-    merged["Target"] = merged["Target"].fillna(0).astype(int)
-    merged["Difference"] = merged["Source"] - merged["Target"]
+    d1["key"] = d1["TableName"].str.lower().str.strip()
+    d2["key"] = d2["TableName"].str.lower().str.strip()
 
-    # New table logic
+    merged = pd.merge(d1, d2, on="key", how="outer", suffixes=("_before", "_after"))
+
+    merged["TableName"] = merged["TableName_before"].combine_first(merged["TableName_after"])
+    merged["Count_before"] = merged["Count_before"].fillna(0).astype(int)
+    merged["Count_after"] = merged["Count_after"].fillna(0).astype(int)
+
+    # NEW TABLE created after installation
     merged["Created"] = merged.apply(
-        lambda r: "YES" if r["Source"] == 0 and r["Target"] > 0 else "",
+        lambda r: "YES" if r["Count_before"] == 0 and r["Count_after"] > 0 else "",
         axis=1
     )
 
-    # Deleted table logic
+    # DELETED TABLE removed after installation
     merged["Deleted"] = merged.apply(
-        lambda r: "YES" if r["Source"] > 0 and r["Target"] == 0 else "",
+        lambda r: "YES" if r["Count_before"] > 0 and r["Count_after"] == 0 else "",
         axis=1
     )
 
-    # Status
-    def get_status(r):
+    merged["Difference"] = merged["Count_before"] - merged["Count_after"]
+
+    def status(r):
         if r["Created"] == "YES":
             return "NEW TABLE"
         if r["Deleted"] == "YES":
             return "DELETED TABLE"
-        if r["Source"] == r["Target"]:
+        if r["Count_before"] == r["Count_after"]:
             return "MATCH"
         return "NOT MATCH"
 
-    merged["Status"] = merged.apply(get_status, axis=1)
+    merged["Status"] = merged.apply(status, axis=1)
 
-    return merged[["TableName", "Source", "Target", "Difference", "Created", "Deleted", "Status"]]
+    return merged[[
+        "TableName", "Count_before", "Count_after",
+        "Difference", "Created", "Deleted", "Status"
+    ]]
 
 # -------------------- FILE UPLOAD --------------------
 st.subheader("Upload Files")
@@ -137,6 +145,7 @@ st.subheader("Upload Files")
 file1 = st.file_uploader("Upload BEFORE file (txt)", type=["txt"])
 file2 = st.file_uploader("Upload AFTER file (txt)", type=["txt"])
 
+# -------------------- MAIN EXECUTION --------------------
 if file1 and file2:
     st.success("Files uploaded successfully!")
 
@@ -148,26 +157,24 @@ if file1 and file2:
 
     result = compare(df1, df2)
 
-    # -------------------- RESULT --------------------
+    # -------------------- RESULT DISPLAY --------------------
     st.subheader("Comparison Result")
 
-    # Summary banner
     if all(result["Status"] == "MATCH"):
         st.markdown('<div class="status-match">ALL TABLES MATCH</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="status-notmatch">MISMATCH / NEW / DELETED TABLE FOUND</div>',
+        st.markdown('<div class="status-notmatch">NEW / DELETED / MISMATCH FOUND</div>',
                     unsafe_allow_html=True)
 
-    st.write("")
     st.dataframe(result, use_container_width=True)
 
-    # -------------------- EXPORT TO EXCEL --------------------
-    output = BytesIO()
-
+    # Prepare subsets
     new_tables = result[result["Created"] == "YES"]
     deleted_tables = result[result["Deleted"] == "YES"]
     mismatched = result[result["Status"] == "NOT MATCH"]
 
+    # -------------------- EXPORT TO EXCEL --------------------
+    output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         result.to_excel(writer, sheet_name="All_Data", index=False)
         mismatched.to_excel(writer, sheet_name="Differences", index=False)
