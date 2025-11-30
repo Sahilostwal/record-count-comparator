@@ -130,15 +130,6 @@ if file_before and file_after:
         df_before = parse_report_text_by_line(text_before)
         df_after  = parse_report_text_by_line(text_after)
 
-    st.markdown("**Parsed table counts (sample)**")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("BEFORE (first 10)")
-        st.dataframe(df_before.head(10))
-    with col2:
-        st.write("AFTER (first 10)")
-        st.dataframe(df_after.head(10))
-
     merged = compare_presence(df_before, df_after)
 
     # Summary counts
@@ -189,3 +180,4 @@ st.markdown("""
 <hr style="margin-top:30px;">
 <div style="text-align:center; font-size:14px;">Developed by <a href="https://github.com/sahilostwal" target="_blank">sahilostwal</a></div>
 """, unsafe_allow_html=True)
+
