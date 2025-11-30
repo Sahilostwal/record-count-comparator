@@ -15,8 +15,6 @@ h1,h2,h3,h4 { color: #3b338c; }
 """, unsafe_allow_html=True)
 
 st.title("Table Count Comparator (Before vs After)")
-st.write("This compares table *presence* (and counts if present) between BEFORE and AFTER reports. It will accurately flag tables created after installation.")
-
 # ---------------- parser ----------------
 def parse_report_text_by_line(text):
     """
@@ -187,5 +185,6 @@ else:
 # Footer
 st.markdown("""
 <hr style="margin-top:30px;">
-<div style="text-align:center; font-size:14px;">Developed by <a href="https://github.com/sahilostwal" target="_blank">sahilostwal</a></div>
+<div style="text-align:center; font-size:14px;">Developed by <a href="https://record-count-comparator-8ws3zka8lkrpb9a8g4umez.streamlit.app" target="_blank">sahilostwal</a></div>
 """, unsafe_allow_html=True)
+
