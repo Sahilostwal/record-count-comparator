@@ -146,10 +146,11 @@ st.markdown(
     <hr style="margin-top:40px; margin-bottom:10px;">
     <div style='text-align:center; font-size:16px; padding:10px;'>
         Developed by 
-        <a href="https://github.com/sahilostwal" target="_blank" style="color:#3b338c; font-weight:bold; text-decoration:none;">
+        <a href="https://record-count-comparator-8ws3zka8lkrpb9a8g4umez.streamlit.app" target="_blank" style="color:#3b338c; font-weight:bold; text-decoration:none;">
             sahilostwal
         </a>
     </div>
     """,
     unsafe_allow_html=True
 )
+
