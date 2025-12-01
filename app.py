@@ -6,22 +6,26 @@ from io import BytesIO
 # -------------------- PAGE STYLE --------------------
 st.set_page_config(page_title="Table Count Comparator", layout="wide")
 
+# -------------------- BACKGROUND + CSS --------------------
 page_bg = """
 <style>
 body {
     background: linear-gradient(135deg, #d9c8ff 0%, #f5b6c8 100%);
     font-family: 'Segoe UI', sans-serif;
 }
+
 .block-container {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.18);
     padding: 2.2rem 2.5rem;
     border-radius: 16px;
     backdrop-filter: blur(10px);
-    box-shadow: 0 0 25px rgba(0,0,0,0.15);
+    box-shadow: 0 0 25px rgba(0,0,0,0.12);
 }
+
 h1, h2, h3, h4 {
     color: #3b338c;
 }
+
 .status-match {
     padding: 6px 12px;
     background-color: #d4f8e8;
@@ -30,6 +34,7 @@ h1, h2, h3, h4 {
     border-radius: 10px;
     display: inline-block;
 }
+
 .status-notmatch {
     padding: 6px 12px;
     background-color: #ffe1e1;
@@ -38,63 +43,79 @@ h1, h2, h3, h4 {
     border-radius: 10px;
     display: inline-block;
 }
+
+.status-new {
+    padding: 6px 12px;
+    background-color: #d7e8ff;
+    color: #0053a6;
+    font-weight: bold;
+    border-radius: 10px;
+    display: inline-block;
+}
+
+.status-deleted {
+    padding: 6px 12px;
+    background-color: #fff3cd;
+    color: #8a6d3b;
+    font-weight: bold;
+    border-radius: 10px;
+    display: inline-block;
+}
+
 </style>
 """
 st.markdown(page_bg, unsafe_allow_html=True)
 
 # -------------------- TITLE --------------------
 st.title("Table Count Comparator (Before vs After)")
-st.write("Upload two table report text files to compare row counts and detect new or deleted tables.")
+st.write("Upload two table report text files to compare row counts after deployment, including NEW and DELETED tables.")
 
-# -------------------- PARSER (LINE BASED, BEST ACCURACY) --------------------
-def parse_report_text_by_line(text):
+# -------------------- PARSER (FIXED) --------------------
+def parse_report_text(text):
+    # Powerful regex: catches ALL patterns like:
+    # TABLE | pbodb100 | Row Count | 123
+    # TABLE | pbodb100 | 123
+    pattern = re.compile(
+        r'TABLE\s*\|\s*([A-Za-z0-9_]+)\s*\|.*?(\d+)',
+        re.IGNORECASE
+    )
+
     rows = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    for m in pattern.finditer(text):
+        table = m.group(1).strip()
+        count = int(m.group(2))
+        rows.append((table, count))
 
-        # TRY FORMAT 1: TABLE | name | other | 123
-        m = re.search(r'TABLE\s*\|\s*([A-Za-z0-9_]+).*?(\d+)', line, re.IGNORECASE)
-        if m:
-            rows.append((m.group(1), int(m.group(2))))
-            continue
-
-        # TRY FORMAT 2: name | 123
-        m2 = re.search(r'^([A-Za-z0-9_]+)\s*\|\s*(\d+)', line)
-        if m2:
-            rows.append((m2.group(1), int(m2.group(2))))
-            continue
-
-        # TRY FORMAT 3: TABLE | name  (count missing)
-        m3 = re.search(r'TABLE\s*\|\s*([A-Za-z0-9_]+)', line, re.IGNORECASE)
-        if m3:
-            rows.append((m3.group(1), 0))
-            continue
+    # fallback: no counts found
+    if not rows:
+        fallback = re.compile(r'TABLE\s*\|\s*([A-Za-z0-9_]+)', re.IGNORECASE)
+        for m in fallback.finditer(text):
+            rows.append((m.group(1).strip(), 0))
 
     return pd.DataFrame(rows, columns=["TableName", "Count"])
 
-# -------------------- COMPARISON LOGIC --------------------
-def compare_presence(df_before, df_after):
-    df_before = df_before.copy()
-    df_after = df_after.copy()
 
-    df_before["key"] = df_before["TableName"].str.lower()
-    df_after["key"] = df_after["TableName"].str.lower()
+# -------------------- COMPARISON LOGIC (FIXED) --------------------
+def compare(df1, df2):
+    d1 = df1.copy()
+    d2 = df2.copy()
 
-    merged = pd.merge(
-        df_before, df_after, on="key", how="outer",
-        suffixes=("_before", "_after")
-    )
+    d1["key"] = d1["TableName"].str.lower().str.strip()
+    d2["key"] = d2["TableName"].str.lower().str.strip()
+
+    merged = pd.merge(d1, d2, on="key", how="outer", suffixes=("_before", "_after"))
 
     merged["TableName"] = merged["TableName_before"].combine_first(merged["TableName_after"])
     merged["Count_before"] = merged["Count_before"].fillna(0).astype(int)
     merged["Count_after"] = merged["Count_after"].fillna(0).astype(int)
 
+    # NEW TABLE created after installation
     merged["Created"] = merged.apply(
         lambda r: "YES" if r["Count_before"] == 0 and r["Count_after"] > 0 else "",
         axis=1
     )
+
+    # DELETED TABLE removed after installation
     merged["Deleted"] = merged.apply(
         lambda r: "YES" if r["Count_before"] > 0 and r["Count_after"] == 0 else "",
         axis=1
@@ -103,9 +124,12 @@ def compare_presence(df_before, df_after):
     merged["Difference"] = merged["Count_before"] - merged["Count_after"]
 
     def status(r):
-        if r["Created"] == "YES": return "NEW TABLE"
-        if r["Deleted"] == "YES": return "DELETED TABLE"
-        if r["Count_before"] == r["Count_after"]: return "MATCH"
+        if r["Created"] == "YES":
+            return "NEW TABLE"
+        if r["Deleted"] == "YES":
+            return "DELETED TABLE"
+        if r["Count_before"] == r["Count_after"]:
+            return "MATCH"
         return "NOT MATCH"
 
     merged["Status"] = merged.apply(status, axis=1)
@@ -118,53 +142,54 @@ def compare_presence(df_before, df_after):
 # -------------------- FILE UPLOAD --------------------
 st.subheader("Upload Files")
 
-file_before = st.file_uploader("Upload BEFORE file (txt)", type=["txt"])
-file_after = st.file_uploader("Upload AFTER file (txt)", type=["txt"])
+file1 = st.file_uploader("Upload BEFORE file (txt)", type=["txt"])
+file2 = st.file_uploader("Upload AFTER file (txt)", type=["txt"])
 
-if file_before and file_after:
+# -------------------- MAIN EXECUTION --------------------
+if file1 and file2:
     st.success("Files uploaded successfully!")
 
-    text_before = file_before.read().decode("utf-8", errors="ignore")
-    text_after = file_after.read().decode("utf-8", errors="ignore")
+    text1 = file1.read().decode("utf-8", errors="ignore")
+    text2 = file2.read().decode("utf-8", errors="ignore")
 
-    df_before = parse_report_text_by_line(text_before)
-    df_after = parse_report_text_by_line(text_after)
+    df1 = parse_report_text(text1)
+    df2 = parse_report_text(text2)
 
-    merged = compare_presence(df_before, df_after)
+    result = compare(df1, df2)
 
-    # -------------------- RESULT --------------------
+    # -------------------- RESULT DISPLAY --------------------
     st.subheader("Comparison Result")
 
-    if all(merged["Status"] == "MATCH"):
+    if all(result["Status"] == "MATCH"):
         st.markdown('<div class="status-match">ALL TABLES MATCH</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="status-notmatch">DIFFERENCES FOUND</div>', unsafe_allow_html=True)
+        st.markdown('<div class="status-notmatch">NEW / DELETED / MISMATCH FOUND</div>',
+                    unsafe_allow_html=True)
 
-    st.dataframe(merged, use_container_width=True)
+    st.dataframe(result, use_container_width=True)
 
-    new_tables = merged[merged["Created"] == "YES"]
-    deleted_tables = merged[merged["Deleted"] == "YES"]
-    mismatched = merged[merged["Status"] == "NOT MATCH"]
+    # Prepare subsets
+    new_tables = result[result["Created"] == "YES"]
+    deleted_tables = result[result["Deleted"] == "YES"]
+    mismatched = result[result["Status"] == "NOT MATCH"]
 
-    # -------------------- EXPORT --------------------
+    # -------------------- EXPORT TO EXCEL --------------------
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        merged.to_excel(writer, sheet_name="All_Results", index=False)
+        result.to_excel(writer, sheet_name="All_Data", index=False)
+        mismatched.to_excel(writer, sheet_name="Differences", index=False)
         new_tables.to_excel(writer, sheet_name="New_Tables", index=False)
         deleted_tables.to_excel(writer, sheet_name="Deleted_Tables", index=False)
-        mismatched.to_excel(writer, sheet_name="Mismatched", index=False)
-
-    excel_bytes = output.getvalue()
 
     st.download_button(
-        label="Download Excel Result",
-        data=excel_bytes,
+        label="Download Comparison Excel",
+        data=output.getvalue(),
         file_name="Record_Comparison.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 else:
-    st.info("Please upload both BEFORE and AFTER files to start comparison.")
+    st.info("Please upload both BEFORE and AFTER files to begin comparison.")
 
 # -------------------- FOOTER --------------------
 st.markdown(
