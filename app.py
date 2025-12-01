@@ -3,82 +3,21 @@ import re
 import pandas as pd
 from io import BytesIO
 
-# -------------------- PAGE STYLE --------------------
 st.set_page_config(page_title="Table Count Comparator", layout="wide")
-
-page_bg = """
-<style>
-body {
-    background: linear-gradient(135deg, #d9c8ff 0%, #f5b6c8 100%);
-    font-family: 'Segoe UI', sans-serif;
-}
-.block-container {
-    background: rgba(255, 255, 255, 0.15);
-    padding: 2.2rem 2.5rem;
-    border-radius: 16px;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 0 25px rgba(0,0,0,0.15);
-}
-h1, h2, h3, h4 {
-    color: #3b338c;
-}
-.status-match {
-    padding: 6px 12px;
-    background-color: #d4f8e8;
-    color: #037d50;
-    font-weight: bold;
-    border-radius: 10px;
-    display: inline-block;
-}
-.status-notmatch {
-    padding: 6px 12px;
-    background-color: #ffe1e1;
-    color: #d11a2a;
-    font-weight: bold;
-    border-radius: 10px;
-    display: inline-block;
-}
-.status-new {
-    padding: 6px 12px;
-    background-color: #d0e7ff;
-    color: #0056b3;
-    font-weight: bold;
-    border-radius: 10px;
-    display: inline-block;
-}
-.status-dropped {
-    padding: 6px 12px;
-    background-color: #fff0b3;
-    color: #a67c00;
-    font-weight: bold;
-    border-radius: 10px;
-    display: inline-block;
-}
-</style>
-"""
-st.markdown(page_bg, unsafe_allow_html=True)
-
-# -------------------- TITLE --------------------
 st.title("Table Count Comparator (Before vs After)")
-st.write("Upload two table report text files to compare row counts after deployment.")
 
+# ---------------------- Parsing Logic (YOUR CODE) ----------------------
 
-# -------------------- PARSER --------------------
 def parse_report_text(text):
-    """
-    Extract table names + counts from the raw text file.
-    Matches patterns like: TABLE | name | ... | 12345
-    """
-
+    # Pattern 1: TABLE | name | ... | number
     pattern = re.compile(r'\bTABLE\s*\|\s*([^\|]+?)\s*\|.*?\|\s*([\d,]+)\b', re.IGNORECASE)
     rows = []
-
     for m in pattern.finditer(text):
         table = m.group(1).strip()
         cnt = int(m.group(2).replace(',', ''))
         rows.append((table, cnt))
 
-    # fallback pattern for lines like "tablename | 123"
+    # Fallback pattern: name | 123
     if not rows:
         fallback = re.compile(r'([A-Za-z0-9_.\- ]+?)\s*\|\s*([\d,]+)')
         for m in fallback.finditer(text):
@@ -86,97 +25,75 @@ def parse_report_text(text):
             cnt = int(m.group(2).replace(',', ''))
             rows.append((table, cnt))
 
-    return pd.DataFrame(rows, columns=['TableName', 'Count'])
+    df = pd.DataFrame(rows, columns=['TableName', 'Count'])
+    return df
 
 
-# -------------------- COMPARISON ENGINE --------------------
-def compare_dfs(df_before, df_after):
-
-    df_before["key"] = df_before["TableName"].str.lower().str.strip()
-    df_after["key"] = df_after["TableName"].str.lower().str.strip()
-
-    merged = pd.merge(df_before, df_after, on="key", how="outer",
-                      suffixes=("_before", "_after"))
-
-    merged["TableName"] = merged["TableName_before"].combine_first(
-                          merged["TableName_after"])
-
-    merged["Count_before"] = merged["Count_before"].fillna(0).astype(int)
-    merged["Count_after"] = merged["Count_after"].fillna(0).astype(int)
-
-    merged["Difference"] = merged["Count_after"] - merged["Count_before"]
-
-    # status logic
-    def get_status(row):
-        if row["Count_before"] == 0 and row["Count_after"] > 0:
-            return "NEW TABLE CREATED"
-        if row["Count_before"] > 0 and row["Count_after"] == 0:
-            return "TABLE DROPPED"
-        if row["Count_before"] == row["Count_after"]:
-            return "MATCH"
-        return "NOT MATCH"
-
-    merged["Status"] = merged.apply(get_status, axis=1)
-
-    return merged[["TableName", "Count_before", "Count_after", "Difference", "Status"]]
+def normalize(df):
+    df = df.copy()
+    df["key"] = df["TableName"].str.strip().str.lower()
+    return df
 
 
-# -------------------- FILE UPLOAD --------------------
-st.subheader("Upload BEFORE & AFTER Files")
+def compare(df1, df2):
+    d1 = normalize(df1).rename(columns={"Count": "Source"})
+    d2 = normalize(df2).rename(columns={"Count": "Target"})
 
-file1 = st.file_uploader("Upload BEFORE file (.txt)", type=["txt"])
-file2 = st.file_uploader("Upload AFTER file (.txt)", type=["txt"])
+    merged = pd.merge(d1, d2, on="key", how="outer", suffixes=("_s", "_t"))
+    merged["TableName"] = merged["TableName_s"].combine_first(merged["TableName_t"])
+    merged["Source"] = merged["Source"].fillna(0).astype(int)
+    merged["Target"] = merged["Target"].fillna(0).astype(int)
+    merged["Difference"] = merged["Source"] - merged["Target"]
+
+    merged["Status"] = merged.apply(
+        lambda row: "MATCH" if row["Source"] == row["Target"] else "NOT MATCH",
+        axis=1
+    )
+
+    return merged[["TableName", "Source", "Target", "Difference", "Status"]]
+
+# ----------------------------------------------------------------------
+
+file1 = st.file_uploader("Upload BEFORE file", type=["txt"])
+file2 = st.file_uploader("Upload AFTER file", type=["txt"])
 
 if file1 and file2:
+    st.success("Files uploaded successfully!")
 
+    # Read content safely
     text1 = file1.read().decode("utf-8", errors="ignore")
     text2 = file2.read().decode("utf-8", errors="ignore")
 
-    df_before = parse_report_text(text1)
-    df_after = parse_report_text(text2)
+    df1 = parse_report_text(text1)
+    df2 = parse_report_text(text2)
 
-    result = compare_dfs(df_before, df_after)
+    if df1.empty:
+        st.warning("⚠ No table rows parsed from BEFORE file. Check format.")
+    if df2.empty:
+        st.warning("⚠ No table rows parsed from AFTER file. Check format.")
 
-    # -------------------- RESULT --------------------
-    st.subheader("Final Comparison Result")
+    result = compare(df1, df2)
 
-    # summary status banner
-    if all(result["Status"] == "MATCH"):
-        st.markdown('<div class="status-match">ALL TABLES MATCH ✔</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="status-notmatch">DIFFERENCES FOUND ⚠</div>', unsafe_allow_html=True)
-
+    st.subheader("Comparison Result")
     st.dataframe(result, use_container_width=True)
 
-    # -------------------- EXPORT TO EXCEL --------------------
+    # Filter NOT MATCH rows
+    notmatch = result[result["Status"] == "NOT MATCH"]
+
+    # Prepare Excel in memory
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        result.to_excel(writer, sheet_name="Full_Comparison", index=False)
-        result[result["Status"] == "NEW TABLE CREATED"].to_excel(writer, "New_Tables", index=False)
-        result[result["Status"] == "TABLE DROPPED"].to_excel(writer, "Dropped_Tables", index=False)
-        result[result["Status"] == "NOT MATCH"].to_excel(writer, "Mismatched_Tables", index=False)
+        result.to_excel(writer, sheet_name="All_Data", index=False)
+        notmatch.to_excel(writer, sheet_name="Differences", index=False)
+
+    excel_data = output.getvalue()
 
     st.download_button(
-        label="Download Comparison Excel",
-        data=output.getvalue(),
+        label="📥 Download Comparison Excel",
+        data=excel_data,
         file_name="Record_Comparison.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 else:
-    st.info("Please upload BOTH files to continue.")
-
-
-# -------------------- FOOTER --------------------
-st.markdown(
-    """
-    <hr style="margin-top:40px; margin-bottom:10px;">
-    <div style='text-align:center; font-size:16px; padding:10px;'>
-        Developed by 
-        <a href="https://github.com/sahilostwal" target="_blank" style="color:#3b338c; font-weight:bold; text-decoration:none;">
-            sahilostwal
-        </a>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+    st.info("Please upload BEFORE and AFTER files to begin comparison.")
