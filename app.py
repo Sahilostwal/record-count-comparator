@@ -1,4 +1,7 @@
 import streamlit as st
+# 🔒 TEMPORARY DECOMMISSION / MAINTENANCE MODE
+st.error("🚧 This application is temporarily unavailable due to maintenance.")
+st.stop()
 import re
 import pandas as pd
 from io import BytesIO
@@ -222,3 +225,4 @@ st.markdown("""
     Developed by <a href="https://github.com/sahilostwal" target="_blank">sahilostwal</a>
 </div>
 """, unsafe_allow_html=True)
+
