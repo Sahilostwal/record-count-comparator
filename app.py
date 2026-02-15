@@ -4,9 +4,6 @@ import re
 import pandas as pd
 from io import BytesIO
 
-# 🔒 TEMPORARY DECOMMISSION / MAINTENANCE MODE
-st.error("🚧 This application is temporarily unavailable.Please compare record count manually(•ᴗ•).")
-st.stop()
 
 st.set_page_config(page_title="Logical & Physical Table Comparator", layout="wide")
 
@@ -227,6 +224,7 @@ st.markdown("""
     Developed by <a href="https://github.com/sahilostwal" target="_blank">sahilostwal</a>
 </div>
 """, unsafe_allow_html=True)
+
 
 
 
